@@ -19,18 +19,58 @@
 // #define FASTLED_ALLOW_INTERRUPTS 0
 #include "FastLED.h"
 #define NUM_LEDS 174
-#define DATA_PIN 2
+#define DATA_PIN 4
 CRGB leds[NUM_LEDS];
 
 // Length of audio files (milliseconds)
-#define UP_TIME 	1375
+#define UP_TIME 	1750
 #define DOWN_TIME 	1375
 #define BELL_TIME	1000
 
-#define MARK_WIDTH 	2 	// (pixels) number of LEDs at full brightness at top of lighted section
+#define MARK_WIDTH 	4 	// (pixels) number of LEDs at full brightness at top of lighted section
 #define MARK_TAIL	8 	// (pixels) width of faded LEDs after MARK
 #define DECAY		127 // (0-255) amount by which brightness drops across MARK_TAIL
 #define DECAY_COL 	65  // 255 / MARK_TAIL
+
+
+
+// ACCELEROMETER SETUP
+#include <Wire.h>
+#include <SPI.h>
+#include <Adafruit_LIS3DH.h>
+#include <Adafruit_Sensor.h>
+
+
+// Used for software SPI
+#define LIS3DH_CLK 13
+#define LIS3DH_MISO 12
+#define LIS3DH_MOSI 11
+// Used for hardware & software SPI
+#define LIS3DH_CS 10
+
+Adafruit_LIS3DH lis = Adafruit_LIS3DH();
+
+#if defined(ARDUINO_ARCH_SAMD)
+// for Zero, output on USB Serial console, remove line below if using programming port to program the Zero!
+   #define Serial SerialUSB
+#endif
+
+
+
+// HAMMER SETTINGS
+
+#define HIT_MIN	40 // minimum force to trigger hit
+#define HIT_MAX 50 // theoretical max hit
+#define AVG_QTY 4	// Number of readings to take an average from 
+// #define WIN_RATE 5
+
+int win_count = 0;
+// int count_loss = 0;
+int strength_offset = 0;
+
+
+
+//////////////////////////////////////////////////////////////////////////////////
 
 
 
@@ -60,7 +100,15 @@ void pause_ms(unsigned int pauseTime)
 
 void animate(unsigned int strength)
 {
-	Serial.println('U'); 	// Trigger SFX
+	if (strength == 100)
+	{
+		Serial.print("#WIN\r\n");
+	}
+	else
+	{
+		Serial.print("#HIT\r\n");
+	}
+	 	// Trigger SFX
 	// pause_ms(100); 			// wait for audio file to load
 
 	// Variables
@@ -71,14 +119,14 @@ void animate(unsigned int strength)
 	int refreshRate = floor(UP_TIME / level);		// Period between turning on successive LEDs 
 	int pauseTime = 0;								// Time to wait between lighitng LEDs (accounting for processing time)
 
-	Serial.print("startTime = ");
-	Serial.println(startTime, DEC);
+	// Serial.print("startTime = ");
+	// Serial.println(startTime, DEC);
 
-	Serial.print("refreshRate = ");
-	Serial.println(refreshRate, DEC);
+	// Serial.print("refreshRate = ");
+	// Serial.println(refreshRate, DEC);
 	
-	Serial.print("level = ");
-	Serial.println(level, DEC);
+	// Serial.print("level = ");
+	// Serial.println(level, DEC);
 
 	clearLEDs();
 
@@ -111,11 +159,11 @@ void animate(unsigned int strength)
 		if (pauseTime > 0)
 			pause_ms(pauseTime);
 
-		Serial.print("timeStage = ");
-		Serial.println(timeStage, DEC);
+		// Serial.print("timeStage = ");
+		// Serial.println(timeStage, DEC);
 
-		Serial.print("pauseTime = ");
-		Serial.println(pauseTime, DEC);
+		// Serial.print("pauseTime = ");
+		// Serial.println(pauseTime, DEC);
 	}
 
 	Serial.println("we got here!"); 
@@ -160,6 +208,7 @@ void animate(unsigned int strength)
 	////////////////////////////////
 	else						// Don't animate down for winners
 	{
+		pause_ms(BELL_TIME + 200);
 		Serial.println('D'); // Trigger SFX
 		// pause_ms(500); 			// wait for audio file to load	
 		startTime = millis(); 
@@ -201,40 +250,164 @@ void animate(unsigned int strength)
 
 void setup() 
 {
+	// LEDS
 	FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);	// setup LED array
 	FastLED.setMaxPowerInVoltsAndMilliamps(5,5000); 			//limit power of LEDs
-	Serial.begin(115200);
+	Serial.begin(9600);
 
 	clearLEDs();
 	FastLED.show();
+
+	// ACCELEROMETER 
+	if (! lis.begin(0x18)) 
+	{   // change this to 0x19 for alternative i2c address
+		Serial.println("Couldnt start");
+		while (1);
+	}
+	Serial.println("LIS3DH found!");
+
+	lis.setRange(LIS3DH_RANGE_16_G);   // 2, 4, 8 or 16 G!
+	// lis.read(); 
+	pause_ms(500);
+
 }
 
 void loop() 
 {
-	// int strength = 0;
-	// if there's any serial available, read it:
-	while (Serial.available() > 0) 
+	// while (Serial.available() > 0) 
+	// {
+	// 	// look for the next valid integer in the incoming serial stream:
+	// 	int strength = Serial.parseInt();
+
+	// 	// look for the newline. That's the end of your sentence:
+	// 	if (Serial.read() == '\n') 
+	// 	{
+	// 		// constrain the values to 0 - 255 and invert
+	// 		// if you're using a common-cathode LED, just use "constrain(color, 0, 255);"
+	// 		strength = constrain(strength, 0, 100);
+
+
+	// 		// print the three numbers in one string as hexadecimal:
+	// 		Serial.print("Strength = ");
+	// 		Serial.println(strength, DEC);
+	// 	}
+	// 	animate(strength);
+	// }
+
+	sensors_event_t event;
+
+	static int max = 0;
+	int ZAcc = 0; 
+	ceil(abs(event.acceleration.z - 9.8));
+	
+	for (int i = 0; i < AVG_QTY; ++i)
 	{
-		// look for the next valid integer in the incoming serial stream:
-		int strength = Serial.parseInt();
-
-		// look for the newline. That's the end of your sentence:
-		if (Serial.read() == '\n') 
-		{
-			// constrain the values to 0 - 255 and invert
-			// if you're using a common-cathode LED, just use "constrain(color, 0, 255);"
-			strength = constrain(strength, 0, 100);
-
-
-			// print the three numbers in one string as hexadecimal:
-			Serial.print("Strength = ");
-			Serial.println(strength, DEC);
-		}
-		animate(strength);
+		lis.getEvent(&event);
+		ZAcc += ceil(abs(event.acceleration.z - 9.8));
+		pause_ms(2);
 	}
 
 
+
+
+	// lis.read();      // get X Y and Z data at once
+	// Then print out the raw data
+	// Serial.print("X:  "); Serial.print(lis.x); 
+	// Serial.print("  \tY:  "); Serial.print(lis.y); 
+	// Serial.print("  \tZ:  "); Serial.print(lis.z); 
+	// Serial.print("  \tMAX:  "); Serial.println(max, DEC); 
+
+	// if (lis.x > max)
+	// 	max = lis.x;
+
+	// if (lis.y > max)
+	// 	max = lis.y;
+
+	// if (lis.z > max)
+	// 	max = lis.z;
+
+	/* Or....get a new sensor event, normalized */ 
+	// sensors_event_t event; 
+	// lis.getEvent(&event);
+
+	/* Display the results (acceleration is measured in m/s^2) */
+	// float hit = 4;
+	// float win = 100;
+
+	// float xAcc = abs(event.acceleration.x);
+	// float yAcc = abs(event.acceleration.y);
 	
+	if (ZAcc > max)
+		max = ZAcc;
+
+	// Serial.print("ZAcc = ");
+	// Serial.print(ZAcc, DEC);
+
+	// Serial.print("\tMax = ");
+	// Serial.println(max, DEC);
+
+	int strength = 0;
+	float strength_temp = 0.0;
+
+	if (ZAcc > (HIT_MIN * AVG_QTY))
+	{
+		ZAcc = ZAcc / AVG_QTY;
+		Serial.print("ZAcc = ");
+		Serial.println(ZAcc, DEC);
+
+
+		strength_temp = (((float) ZAcc - (float) HIT_MIN) / (float) HIT_MAX) *100.0;// / (HIT_MAX * 100));
+		Serial.print("Strength = ");
+		Serial.println(strength_temp, DEC);
+
+		strength = constrain(strength_temp + strength_offset, 15, 100);
+
+		animate(strength);
+
+		if (strength == 100) // if we win
+		{	
+			win_count -= 20;
+		}
+
+		else
+		{
+			win_count += 5;
+		}
+
+		if (win_count >= 75)
+		{
+			win_count = 75;
+		}
+		else if (win_count <= 0)
+		{
+			win_count = 0;
+		}
+
+		strength_offset = random(win_count, 80);
+		
+
+
+	}
+
+
+
+	// float totalAcc = 0;
+	// if (xAcc > yAcc)
+	// {
+	// 	totalAcc = max(xAcc, ZAcc);
+	// }
+	// else 
+	// {
+	// 	totalAcc = max(yAcc, ZAcc);
+	// }
+
+
+	  /* Display the results (acceleration is measured in m/s^2) */
+	// Serial.print("\t\tX: "); Serial.print(event.acceleration.x);
+	// // Serial.print(" \tY: "); Serial.print(event.acceleration.y); 
+	// Serial.print(" \tZ: "); Serial.print(event.acceleration.z); 
+	// Serial.println(" m/s^2 ");
+
 
 
 }
