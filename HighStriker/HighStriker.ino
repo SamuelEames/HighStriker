@@ -7,9 +7,6 @@
 // TODO
 /**
 
- * LED Up animation
- * LED down animation
- * Bell animation
 
  * Indication that RPI is ready
  * Run with sensor - button / vibration / accelerometer 
@@ -19,6 +16,7 @@
 **/
 
 // Pixel LED Setup
+// #define FASTLED_ALLOW_INTERRUPTS 0
 #include "FastLED.h"
 #define NUM_LEDS 174
 #define DATA_PIN 2
@@ -42,17 +40,18 @@ void clearLEDs()
 		leds[i] = CRGB::Black;
 
 	// FastLED.show();
+	return;
 }
 
 
-void pause_ms(unsigned int pausetime)
+void pause_ms(unsigned int pauseTime)
 {
-	long lasttime = millis();
+	long startTime = millis();
 
-	if (millis() < lasttime) 
-		lasttime = millis(); // we wrapped around, lets just try again
+	if (millis() < startTime) 
+		startTime = millis(); // we wrapped around, lets just try again
 
-	while ((lasttime + pausetime) > millis())
+	while ((startTime + pauseTime) > millis())
 		; // do nothing
 	
 	return;
@@ -72,14 +71,14 @@ void animate(unsigned int strength)
 	int refreshRate = floor(UP_TIME / level);		// Period between turning on successive LEDs 
 	int pauseTime = 0;								// Time to wait between lighitng LEDs (accounting for processing time)
 
-/*	Serial.print("startTime = ");
+	Serial.print("startTime = ");
 	Serial.println(startTime, DEC);
 
 	Serial.print("refreshRate = ");
 	Serial.println(refreshRate, DEC);
 	
 	Serial.print("level = ");
-	Serial.println(level, DEC);*/
+	Serial.println(level, DEC);
 
 	clearLEDs();
 
@@ -112,16 +111,14 @@ void animate(unsigned int strength)
 		if (pauseTime > 0)
 			pause_ms(pauseTime);
 
-/*		Serial.print("timeStage = ");
+		Serial.print("timeStage = ");
 		Serial.println(timeStage, DEC);
 
 		Serial.print("pauseTime = ");
-		Serial.println(pauseTime, DEC);*/
+		Serial.println(pauseTime, DEC);
 	}
 
 	Serial.println("we got here!"); 
-
-
 
 	////////////////////////////////
 	////////// ??WINNER?? //////////
@@ -134,24 +131,26 @@ void animate(unsigned int strength)
 		startTime = millis(); 
 
 
-
-		// random colored speckles that blink in and fade smoothly
-		while ((millis() - startTime) < BELL_TIME)
+		// // random colored speckles that blink in and fade smoothly
+		int temp = (millis() - startTime);
+		while (temp < BELL_TIME)
 		{
 			fadeToBlackBy( leds, NUM_LEDS, 10);
 			int pos = random16(NUM_LEDS);
 			leds[pos] += CHSV( 0 + random8(64), 200, 255);
-
+			// pause_ms(5); 
 			FastLED.show();
+			temp = (millis() - startTime);
 		}
 
 		// Fade off remaining LEDs
-		for (int i = 0; i < 1000; ++i)
+		for (int i = 0; i < 255; ++i)
 		{
-			fadeToBlackBy( leds, NUM_LEDS, 10);
+			for (int j = 0; j < NUM_LEDS; ++j)
+				leds[j] -= CRGB( 1, 1, 1);
+
 			FastLED.show();
 		}
-		
 
 	}
 
@@ -164,23 +163,16 @@ void animate(unsigned int strength)
 		Serial.println('D'); // Trigger SFX
 		// pause_ms(500); 			// wait for audio file to load	
 		startTime = millis(); 
+		timeStage = 0;	
 
-
-		for (int i = level; i < 0; --i)
+		// Turn off LEDs from top to bottom of lighted section
+		for (int i = level; i >= 0; --i)
 		{
-			// Light up some LEDs!
 			leds[i] = CRGB::Black;
 			
-			// Drop brightness of trailing LEDs
-			if ((i - MARK_WIDTH) > 0)
-			{
+			// Draw MARK segment
+			if ((i - MARK_WIDTH) >= 0)
 				leds[i - MARK_WIDTH] = CRGB::White;
-				// for (int j = (i - MARK_WIDTH); j > (i - MARK_TAIL); --j)
-				// {
-				// 	leds[j] -= CRGB( 0, DECAY_COL, DECAY_COL); // fade tail to red colour
-				// 	leds[j].fadeLightBy( DECAY );
-				// }	
-			}
 
 			FastLED.show();
 
@@ -191,21 +183,19 @@ void animate(unsigned int strength)
 			if (pauseTime > 0)
 				pause_ms(pauseTime);
 
-			Serial.print("timeStage = ");
+/*			Serial.print("timeStage = ");
 			Serial.println(timeStage, DEC);
 
 			Serial.print("pauseTime = ");
-			Serial.println(pauseTime, DEC);
+			Serial.println(pauseTime, DEC);*/
 		}
-
-		Serial.println("we did not get here!"); 
 
 	}
 
-	// long animationTime = millis() - startTime;
-	// Serial.print("animationTime = ");
-	// Serial.println(animationTime, DEC);
-
+/*	long animationTime = millis() - startTime;
+	Serial.print("animationTime = ");
+	Serial.println(animationTime, DEC);*/
+	return;
 }
 
 
@@ -237,8 +227,8 @@ void loop()
 
 
 			// print the three numbers in one string as hexadecimal:
-			// Serial.print("Strength = ");
-			// Serial.println(strength, DEC);
+			Serial.print("Strength = ");
+			Serial.println(strength, DEC);
 		}
 		animate(strength);
 	}
