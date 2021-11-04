@@ -5,7 +5,7 @@
 
 
 //////////////////// DEBUG SETUP ////////////////////
-#define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
+// #define DEBUG   //If you comment this line, the DPRINT & DPRINTLN lines are defined as blank.
 #ifdef DEBUG
 	#define DPRINT(...)   Serial.print(__VA_ARGS__)   //DPRINT is a macro, debug print
 	#define DPRINTLN(...) Serial.println(__VA_ARGS__) //DPRINTLN is a macro, debug print with new line
@@ -41,6 +41,8 @@ Adafruit_NeoPixel leds(NUM_LEDS, LED_PIN, NEO_GRBW + NEO_KHZ800);
 
 #define COL_BLACK 		0x00000000
 #define COL_WHITE 		0xFF000000
+#define COL_DEFAULT		0x00000011
+#define COL_RED 			0x11FF0000
 
 
 #define MARK_WIDTH 		4 			// (pixels) number of LEDs at full brightness at top of lighted section
@@ -67,13 +69,16 @@ Adafruit_Soundboard sfx = Adafruit_Soundboard(&Serial1, NULL, PIN_SFX_RST);
 // NOTE: Connect UG to ground to have the sound board boot into UART mode
 
 // Audio filenames (format should be 8chars, no '.' and then extension)
-char Audio_Beep[] = "T01NEXT0WAV";
+char Audio_UP[] 	= "T01UP000OGG";
+char Audio_DOWN[] = "T02DOWN0OGG";
+char Audio_BELL[] = "T03BELL0OGG";
 
 
 // Length of audio files (milliseconds)
-#define UP_TIME 	1750
-#define DOWN_TIME 	1375
-#define BELL_TIME	1000
+#define UP_TIME 	250
+#define DOWN_TIME 	320
+#define BELL_TIME	500
+#define LAG_TIME 200
 
 
 //////////////////// MISC VARIABLES ////////////////////
@@ -120,91 +125,189 @@ void pause_ms(uint32_t pauseTime)
 void animate(uint16_t strength)
 {
 	// strength equates to the % of LED strip to light up 
-	#ifdef DEBUG
-		if (strength == 100)
-			Serial.print("#WIN\r\n");
-		else
-			Serial.print("#HIT\r\n");
-	#endif
+	// #ifdef DEBUG
+	// 	if (strength == 100)
+	// 		Serial.print("#WIN\r\n");
+	// 	else
+	// 		Serial.print("#HIT\r\n");
+	// #endif
+
+	// strength = 100;
 
 
 	// Variables
 	uint16_t 	level = floor(NUM_LEDS * 0.01 * strength); 		// Pixel height to which marker travels
 
-	uint32_t 	startTime = millis(); 												// Time at beginning of animation
+	uint32_t 	startTime;												// Time at beginning of animation
 	uint32_t 	timeStage = 0;																// Theoretical time since start of animation
 	uint8_t 	refreshRate = floor(UP_TIME / level);					// Period between turning on successive LEDs 
 	uint8_t 	pauseTime = 0;																// Time to wait between lighitng LEDs (accounting for processing time)
 
+	uint16_t  currentHeight = 0;														// Holds number of LEDs to light up for each stage
 
-	leds.clear();
+	// leds.clear();				// Black the things to begin
 
 	////////////////////////////////
 	////////// ANIMATE UP //////////
 	////////////////////////////////
-	
 
-	for (uint16_t i = 0; i < level; ++i)
+	/*
+		It takes longer to light up LEDs one by one than it does to play file, so let's assume we'll need to skip some frames
+
+
+		Number of LEDs to light up = % though SFX
+		Level * (elapsedTime/total time)
+
+
+
+
+
+	*/ 
+	if (!sfx.reset()) 
 	{
-		// Light up some LEDs!
-		// leds[i] = COL_WHITE;
-		leds.setPixelColor(i, 0xFFFF1100);
-		
-		// Drop brightness of trailing LEDs
-		if (i > MARK_WIDTH)
-		{
-			for (uint16_t j = (i - MARK_WIDTH); j > (i - MARK_TAIL); --j)
-			{
-				leds.setPixelColor(j, (leds.getPixelColor(j) - 0x11000000));
-				// leds[j] -= CRGB( 0, DECAY_COL, DECAY_COL); // fade tail to red colour
-				// leds[j].fadeLightBy( DECAY );
-			}	
-		}
-
-		leds.show();
-
-		// Calculate time to wait between frames (to keep in sync with audio)
-		timeStage += refreshRate;
-		pauseTime = startTime + timeStage - millis(); 		
-
-		if (pauseTime > 0)
-			pause_ms(pauseTime);
+      DPRINTLN("Reset failed");
+  }
+	if (! sfx.playTrack(Audio_UP) )
+	{
+		DPRINTLN("Failed to play track?");
 	}
 
-	Serial.println("we got here!"); 
+	startTime = millis();
+	while ((startTime + UP_TIME) > millis() )
+	{
+		// Calculate number of LEDs to light up
+
+		// float tempVal = (millis() - startTime) / (float) UP_TIME;
+		currentHeight = level * ((millis() - startTime) / (float) UP_TIME);
+
+		// DPRINT("TempVal = ");
+		// DPRINTLN(tempVal);
+
+		// leds.fill(COL_RED, 0, currentHeight);
+
+		// if (currentHeight > MARK_WIDTH)
+		// 	leds.fill(COL_WHITE, currentHeight - MARK_WIDTH, MARK_WIDTH);
+		// else
+		// 	leds.fill(COL_WHITE, 0, currentHeight);
+
+
+		for (uint16_t i = 0; i < currentHeight; ++i)
+		{
+
+			if (currentHeight - i < MARK_WIDTH)
+				leds.setPixelColor(i, COL_WHITE);
+			else
+				leds.setPixelColor(i, COL_RED);
+
+
+			// if (currentHeight > MARK_WIDTH)
+			// 	leds.setPixelColor(i, COL_RED);
+			// 	leds.fill(COL_WHITE, currentHeight - MARK_WIDTH, MARK_WIDTH);
+			// else
+			// 	leds.fill(COL_WHITE, 0, currentHeight);
+		}
+
+
+
+		// for (uint16_t i = 0; i < currentHeight; ++i)
+		// {
+		// 	leds.setPixelColor(i, COL_RED);
+		// }
+		leds.show();
+	}
+
+	// pause_ms(LAG_TIME);
+	
+
+	// for (uint16_t i = 0; i < level; ++i)
+	// {
+	// 	// Light up some LEDs!
+	// 	// leds[i] = COL_WHITE;
+	// 	leds.setPixelColor(i, 0xFFFF1100);
+		
+	// 	// Drop brightness of trailing LEDs
+	// 	if (i > MARK_WIDTH)
+	// 	{
+	// 		for (uint16_t j = (i - MARK_WIDTH); j > (i - MARK_TAIL); --j)
+	// 		{
+	// 			leds.setPixelColor(j, (leds.getPixelColor(j) - 0x11000000));
+	// 			// leds[j] -= CRGB( 0, DECAY_COL, DECAY_COL); // fade tail to red colour
+	// 			// leds[j].fadeLightBy( DECAY );
+	// 		}	
+	// 	}
+
+
+		// Calculate time to wait between frames (to keep in sync with audio)
+		// timeStage += refreshRate;
+		// pauseTime = startTime + timeStage - millis(); 		
+
+		// if (pauseTime > 0)
+		// 	pause_ms(pauseTime);
+	// }
+
+	// Serial.println("we got here!"); 
 
 	////////////////////////////////
 	////////// ??WINNER?? //////////
 	////////////////////////////////
 	if (strength >= 100) // IF strength = 100, trigger bell animation
 	{
-		Serial.println('W'); 	// Trigger SFX
+		// Serial.println('W'); 	// Trigger SFX
+		if (!sfx.reset()) 
+		{
+        DPRINTLN("Reset failed");
+    }
+		if (! sfx.playTrack(Audio_BELL) )
+		{
+			DPRINTLN("Failed to play track?");
+		}
 		// pause_ms(100); 			// wait for audio file to load
 
 		startTime = millis(); 
 
-		// // random colored speckles that blink in and fade smoothly
-		uint16_t temp = (millis() - startTime);
-		while (temp < BELL_TIME)
-		{
-			// fadeToBlackBy( leds, NUM_LEDS, 10);
-			uint16_t pos = random(NUM_LEDS);
-			// leds[pos] += CHSV( 0 + random8(64), 200, 255);
-			// pause_ms(5); 
-			leds.show();
-			temp = (millis() - startTime);
-		}
 
-		// Fade off remaining LEDs
-		for (uint8_t i = 0; i < 255; ++i)
+		while ((startTime + BELL_TIME) > millis() )
 		{
-			for (uint16_t j = 0; j < NUM_LEDS; ++j)
-				// leds[j] -= CRGB( 1, 1, 1);
-				leds.setPixelColor(j, (leds.getPixelColor(j) - 0x01010101)); // Fix this
+			// Calculate number of LEDs to light up
 
+			// float tempVal = (millis() - startTime) / (float) UP_TIME;
+			currentHeight = level * ((millis() - startTime) / (float) BELL_TIME);
+
+			// DPRINT("TempVal = ");
+			// DPRINTLN(tempVal);
+			for (uint8_t i = 0; i < 10; ++i)
+			{
+				/* code */
+				leds.fill(random(0x00FFFFFF), random(NUM_LEDS-9), 8);
+			}
 
 			leds.show();
 		}
+
+		// leds.setPixelColor(random(NUM_LEDS-1), random(0xFFFFFFFF));
+
+		// // // random colored speckles that blink in and fade smoothly
+		// uint16_t temp = (millis() - startTime);
+		// while (temp < BELL_TIME)
+		// {
+		// 	// fadeToBlackBy( leds, NUM_LEDS, 10);
+		// 	uint16_t pos = random(NUM_LEDS);
+		// 	// leds[pos] += CHSV( 0 + random8(64), 200, 255);
+		// 	// pause_ms(5); 
+		// 	leds.show();
+		// 	temp = (millis() - startTime);
+		// }
+
+		// // Fade off remaining LEDs
+		// for (uint8_t i = 0; i < 255; ++i)
+		// {
+		// 	for (uint16_t j = 0; j < NUM_LEDS; ++j)
+		// 		// leds[j] -= CRGB( 1, 1, 1);
+		// 		leds.setPixelColor(j, (leds.getPixelColor(j) - 0x01010101)); // Fix this
+
+			leds.fill(COL_DEFAULT);
+			leds.show();
+		
 
 	}
 
@@ -214,35 +317,79 @@ void animate(uint16_t strength)
 	////////////////////////////////
 	else						// Don't animate down for winners
 	{
-		pause_ms(BELL_TIME + 200);
-		Serial.println('D'); // Trigger SFX
+		// pause_ms(BELL_TIME + 200);
+		// Serial.println('D'); // Trigger SFX
+
+		if (!sfx.reset()) 
+		{
+        DPRINTLN("Reset failed");
+    }
+		if (! sfx.playTrack(Audio_DOWN) )
+		{
+			DPRINTLN("Failed to play track?");
+		}
 		// pause_ms(500); 			// wait for audio file to load	
 		startTime = millis(); 
 		timeStage = 0;	
 
 
-		// Turn off LEDs from top to bottom of lighted section
-		for (uint16_t i = level; i > 0; --i)
+		while ((startTime + DOWN_TIME) > millis() )
 		{
-			// leds[i] = CRGB::Black;
-			leds.setPixelColor(i, COL_BLACK);
-			
-			// Draw MARK segment
-			if ((i - MARK_WIDTH) >= 0)
-				// leds[i - MARK_WIDTH] = CRGB::White;
-				leds.setPixelColor(i - MARK_WIDTH, COL_WHITE);
+			// Calculate number of LEDs to light up
+
+			// float tempVal = (millis() - startTime) / (float) UP_TIME;
+			currentHeight = level * (1.0 - (millis() - startTime) / (float) DOWN_TIME);
+
+			// DPRINT("currentHeight = ");
+			// DPRINTLN(currentHeight);
+
+
+			leds.fill(COL_DEFAULT, currentHeight, NUM_LEDS - currentHeight);
+
+		for (uint16_t i = 0; i < currentHeight; ++i)
+		{
+
+			if (currentHeight - i < MARK_WIDTH)
+				leds.setPixelColor(i, COL_WHITE);
+			// else
+			// 	leds.setPixelColor(i, COL_RED);
+		}			
+
+
+			// for (uint16_t i = 0; i < currentHeight; ++i)
+			// {
+			// 	/* code */
+			// }
 
 			leds.show();
-
-			// Calculate time to wait between frames (to keep in sync with audio)
-			timeStage += refreshRate;
-			pauseTime = startTime + timeStage - millis(); 		
-
-			if (pauseTime > 0)
-				pause_ms(pauseTime);
 		}
 
-		Serial.println("Hey");
+
+		pause_ms(LAG_TIME);
+
+
+		// // Turn off LEDs from top to bottom of lighted section
+		// for (uint16_t i = level; i > 0; --i)
+		// {
+		// 	// leds[i] = CRGB::Black;
+		// 	leds.setPixelColor(i, COL_BLACK);
+			
+		// 	// Draw MARK segment
+		// 	if ((i - MARK_WIDTH) >= 0)
+		// 		// leds[i - MARK_WIDTH] = CRGB::White;
+		// 		leds.setPixelColor(i - MARK_WIDTH, COL_WHITE);
+
+		// 	leds.show();
+
+		// 	// Calculate time to wait between frames (to keep in sync with audio)
+		// 	timeStage += refreshRate;
+		// 	pauseTime = startTime + timeStage - millis(); 		
+
+		// 	if (pauseTime > 0)
+		// 		pause_ms(pauseTime);
+		// }
+
+		// Serial.println("Hey");
 	}
 
 	// Reset air pressure readings ready for next play
@@ -267,11 +414,25 @@ void setup()
 	leds.setBrightness(BRIGHTNESS);
 
 
-	leds.fill(COL_WHITE, 0, NUM_LEDS);
+	leds.fill(COL_DEFAULT, 0, NUM_LEDS);
 	leds.show();
 
 
-	Serial.begin(9600);
+	// Setup sound board module
+	Serial1.begin(9600);									// Open serial connection
+
+	if (!sfx.reset()) 										// Rest & check it's there
+	{
+		DPRINTLN("SFX module not found");
+	}
+	else
+	{
+		DPRINTLN("SFX module found!");
+	}
+
+	// delay(1000);
+
+
 
 	// Instantiate air pressure sensor
 	airPSensor.begin(HX711_DOUT_PIN, HX711_SCK_PIN);
@@ -326,6 +487,12 @@ void loop()
 	{
 		airPReading_RAW = airPSensor.read();
 
+		if (abs(airPReading_RAW) > 8000000) 				// Sensor reads solid high if bumped sometimes
+		{
+			DPRINTLN(F("ERROR - RIDICULOUSLY HIGH READING"));
+			return;
+		}
+
 		airPReadings[readingNum++] = airPReading_RAW - lastAPReading;
 		lastAPReading = airPReading_RAW;
 
@@ -351,10 +518,10 @@ void loop()
 	if (readingNum >= NUM_READINGS)
 		readingNum = 0;
 
-	delay(100); // Can only take a reading roughly every 87ms
+	// delay(50); // Can only take a reading roughly every 87ms
 
 	// DPRINT(F(", "));
-	DPRINTLN(getAirPAvg());
+	// DPRINTLN(getAirPAvg());
 	
 
 
@@ -385,18 +552,18 @@ void loop()
 	uint8_t strength = 0;
 	float strength_temp = 0.0;
 
-	if (airPSmooth > HIT_MIN)
+	if (airPSmooth > HIT_MIN && airPSmooth < 10000) // fix this later - bad max readings from sensor sometimes
 	{
 
 
 		// ZAcc = ZAcc / AVG_QTY;
-		Serial.print("airPSmooth = ");
-		Serial.println(airPSmooth, DEC);
+		DPRINT("airPSmooth = ");
+		DPRINTLN(airPSmooth, DEC);
 
 
 		strength_temp = (((float) airPSmooth - (float) HIT_MIN) / (float) actualMax) *100.0;// / (HIT_MAX * 100));
-		Serial.print("Strength = ");
-		Serial.println(strength_temp, DEC);
+		DPRINT("Strength = ");
+		DPRINTLN(strength_temp, DEC);
 
 		strength = constrain(strength_temp + strength_offset, 15, 100);
 
@@ -411,7 +578,7 @@ void loop()
 		else if (win_count <= 0)
 			win_count = 0;
 
-		strength_offset = random(win_count, 80);
+		strength_offset = random(win_count, win_count + 10);
 	}
 }
 
